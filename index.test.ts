@@ -331,6 +331,32 @@ test("cachew DOES ping in session mode when the cache is still warm", async () =
 	handlers.get("session_shutdown")!({}, ctx);
 });
 
+test("cachew stops pinging after maxIdleMs with no real turn, and a real turn restarts it", async () => {
+	const { pi, handlers, commands, sent } = makePi();
+	installCachew(pi);
+
+	const { ctx } = makeCtx(0.5);
+	handlers.get("session_start")!({}, ctx);
+	await commands.get("cachew")!.handler("mode session", ctx);
+
+	const realNow = Date.now;
+	try {
+		Date.now = () => realNow() + 31 * 60_000; // past the 30 min default idle limit
+		handlers.get("before_provider_request")!({ payload: {} }, ctx); // cache still warm
+		await commands.get("cachew")!.handler("now", ctx);
+		assert.deepEqual(sent, [], `should stop at the idle limit, but sent: ${JSON.stringify(sent)}`);
+
+		handlers.get("agent_start")!({}, ctx); // a real turn
+		handlers.get("agent_end")!({}, ctx);
+		await commands.get("cachew")!.handler("now", ctx);
+		assert.deepEqual(sent, ["."], `a real turn should restart pings, got: ${JSON.stringify(sent)}`);
+	} finally {
+		Date.now = realNow;
+	}
+
+	handlers.get("session_shutdown")!({}, ctx);
+});
+
 test("debug mode prints a per-ping HIT readout with cache metrics + response (session)", async () => {
 	const { pi, handlers, commands, sent } = makePi();
 	installCachew(pi);

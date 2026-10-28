@@ -117,6 +117,7 @@ type CachewConfig = {
 	coldSkipMarginMs: number;
 	wakeDriftMs: number;
 	warmAnyModel: boolean;
+	maxIdleMs: number;
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "cachew.json");
@@ -131,7 +132,10 @@ const DEFAULT_CONFIG: CachewConfig = {
 	coldSkipMarginMs: 20_000,
 	wakeDriftMs: 5_000,
 	warmAnyModel: false,
+	maxIdleMs: 30 * 60_000,
 };
+// `maxIdleMs` stops pinging once the session has had no real turn for this long
+// (0 = never stop). The next real turn re-warms the cache and re-arms pings.
 // SLEEP-AWARENESS: setTimeout freezes while the machine is asleep, so a laptop
 // nap longer than the TTL always expires the cache (unavoidable — the CPU is
 // frozen). What we CAN avoid is the wasteful auto-rewarm on wake: if more than
@@ -174,6 +178,10 @@ function loadConfig(path: string): CachewConfig {
 			coldSkipMarginMs: positiveNumber(raw.coldSkipMarginMs, DEFAULT_CONFIG.coldSkipMarginMs),
 			wakeDriftMs: positiveNumber(raw.wakeDriftMs, DEFAULT_CONFIG.wakeDriftMs),
 			warmAnyModel: typeof raw.warmAnyModel === "boolean" ? raw.warmAnyModel : DEFAULT_CONFIG.warmAnyModel,
+			maxIdleMs:
+				typeof raw.maxIdleMs === "number" && Number.isFinite(raw.maxIdleMs) && raw.maxIdleMs >= 0
+					? raw.maxIdleMs
+					: DEFAULT_CONFIG.maxIdleMs,
 		};
 	} catch {
 		return { ...DEFAULT_CONFIG };
@@ -483,6 +491,9 @@ export default function (pi: ExtensionAPI, options: { configPath?: string } = {}
 	// Wall-clock anchor for the sleep-aware skip: the last time we KNOW the cache
 	// prefix was written/read (any real provider request or a successful ping).
 	let lastWarmAt = Date.now();
+	// Wall-clock end of the last real (non-ping) agent run, for the idle limit.
+	let lastActiveAt = Date.now();
+	let realRun = false;
 	// Wall-clock of the previous 1s display tick; a big jump ⇒ we resumed from sleep.
 	let lastTick = Date.now();
 
@@ -698,11 +709,13 @@ export default function (pi: ExtensionAPI, options: { configPath?: string } = {}
 
 	pi.on("agent_start", () => {
 		agentBusy = true;
+		realRun = !sessionPingPending;
 		clearWarm();
 		render();
 	});
 	pi.on("agent_end", () => {
 		agentBusy = false;
+		if (realRun) lastActiveAt = Date.now();
 		arm();
 		render();
 	});
@@ -723,7 +736,7 @@ export default function (pi: ExtensionAPI, options: { configPath?: string } = {}
 	});
 	pi.on("session_start", (_event, ctx) => {
 		captureRefs(ctx);
-		lastWarmAt = lastTick = Date.now();
+		lastWarmAt = lastActiveAt = lastTick = Date.now();
 		startDisplay();
 		arm();
 		render();
@@ -737,6 +750,14 @@ export default function (pi: ExtensionAPI, options: { configPath?: string } = {}
 		clearWarm();
 		if (!enabled || agentBusy || inFlight || sessionPingPending) return;
 		if (!cacheCapableNow(currentModel)) return arm();
+
+		// Idle limit: nobody has used this session for maxIdleMs, so stop paying to
+		// keep it warm. Don't re-arm; the next real turn (agent_end) re-arms.
+		if (config.maxIdleMs > 0 && Date.now() - lastActiveAt >= config.maxIdleMs) {
+			const idleMin = Math.round((Date.now() - lastActiveAt) / 60_000);
+			logPing({ outcome: "skip", via: mode, read: 0, write: 0, inTok: 0, outTok: 0, cost: 0, text: `idle limit — no real turn for ${idleMin}m` });
+			return render("stopped — idle limit");
+		}
 
 		// Sleep-aware skip: if we've been idle longer than the cache TTL (e.g. the
 		// laptop slept and froze this timer, so it fired late), the prefix is already
