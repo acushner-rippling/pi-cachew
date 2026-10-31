@@ -406,7 +406,7 @@ Cachew reads user-level settings from `~/.pi/agent/cachew.json`. If the file is 
   "coldSkipMarginMs": 20000,
   "wakeDriftMs": 5000,
   "warmAnyModel": false,
-  "maxIdleMs": 1800000
+  "maxIdleMs": 1860000
 }
 ```
 
@@ -422,7 +422,7 @@ Cachew reads user-level settings from `~/.pi/agent/cachew.json`. If the file is 
 | `maxConsecutiveMisses` | disable magic after this many cache-miss pings |
 | `sessionPingText` | what `session` mode sends |
 | `warmAnyModel` | `false` → only warm models with `cost.cacheRead > 0` |
-| `maxIdleMs` | stop pinging after this long with no real turn (default 30 min; `0` = never stop); the next real turn restarts pings |
+| `maxIdleMs` | stop pinging after this long with no real turn (default 31 min; `0` = never stop); the next real turn restarts pings |
 
 ---
 

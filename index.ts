@@ -132,7 +132,7 @@ const DEFAULT_CONFIG: CachewConfig = {
 	coldSkipMarginMs: 20_000,
 	wakeDriftMs: 5_000,
 	warmAnyModel: false,
-	maxIdleMs: 30 * 60_000,
+	maxIdleMs: 31 * 60_000,
 };
 // `maxIdleMs` stops pinging once the session has had no real turn for this long
 // (0 = never stop). The next real turn re-warms the cache and re-arms pings.

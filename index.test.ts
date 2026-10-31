@@ -341,7 +341,7 @@ test("cachew stops pinging after maxIdleMs with no real turn, and a real turn re
 
 	const realNow = Date.now;
 	try {
-		Date.now = () => realNow() + 31 * 60_000; // past the 30 min default idle limit
+		Date.now = () => realNow() + 32 * 60_000; // past the 31 min default idle limit
 		handlers.get("before_provider_request")!({ payload: {} }, ctx); // cache still warm
 		await commands.get("cachew")!.handler("now", ctx);
 		assert.deepEqual(sent, [], `should stop at the idle limit, but sent: ${JSON.stringify(sent)}`);
